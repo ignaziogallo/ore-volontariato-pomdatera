@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pom da Tera - Gestione Ore</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-stone-50 text-stone-800">
+
+    <nav class="bg-green-700 text-white p-4 shadow-md flex justify-between items-center">
+        <h1 class="text-xl font-bold">🍎 Pom da Tera</h1>
+        <button id="btnLogout" class="hidden text-sm bg-green-800 px-3 py-1 rounded hover:bg-green-900 transition">Esci</button>
+    </nav>
+
+    <div id="authSection" class="max-w-md mx-auto mt-20 p-10 bg-white rounded shadow text-center">
+        <h2 class="text-2xl mb-6 font-bold text-green-800">Pom da Tera</h2>
+        <p class="mb-6 text-stone-600">Accedi con il tuo account Google per registrare le ore.</p>
+        <button id="btnLoginGoogle" class="flex items-center justify-center w-full border p-3 rounded-lg hover:bg-stone-50 transition shadow-sm">
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-6 h-6 mr-3">
+            Accedi con Google
+        </button>
+    </div>
+
+    <div id="mainApp" class="hidden max-w-6xl mx-auto p-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            <section class="bg-white p-6 rounded-lg shadow h-fit">
+                <h2 class="font-bold mb-4 text-green-700 uppercase text-sm tracking-wider">Nuova Attività</h2>
+                <form id="oreForm" class="space-y-4">
+                    <select id="attivita" class="w-full border p-2 rounded bg-stone-50">
+                        <option>Centro del Riuso</option>
+                        <option>Frutteto</option>
+                        <option>Panieri</option>
+                        <option>Sede</option>
+                        <option>Direttivo</option>
+                        <option>Gestione Economica</option>
+                        <option>Varie</option>
+                    </select>
+                    <input type="number" id="ore" step="0.5" class="w-full border p-2 rounded" placeholder="Ore (es. 2.5)" required>
+                    <div>
+                        <label class="text-[10px] text-stone-500 uppercase">Data attività</label>
+                        <input type="date" id="dataAttivita" class="w-full border p-2 rounded bg-stone-50" required>
+                    </div>
+                    <textarea id="descrizione" class="w-full border p-2 rounded" placeholder="Cosa hai fatto?" required></textarea>
+                    <button type="submit" class="w-full bg-green-600 text-white py-2 rounded font-bold hover:bg-green-700">Registra</button>
+                </form>
+            </section>
+
+            <section class="md:col-span-2 bg-white p-6 rounded-lg shadow overflow-x-auto">
+                <h2 class="font-bold mb-4 text-green-700 uppercase text-sm tracking-wider">Riepilogo Ore per Socio</h2>
+                <table class="w-full text-xs text-left border-collapse border">
+                    <thead>
+                        <tr class="bg-stone-100" id="tableHeader">
+                            <th class="p-2 border">Socio</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </section>
+
+            <section class="md:col-span-3 bg-white p-6 rounded-lg shadow mt-6">
+                <h2 class="font-bold mb-6 border-b pb-2 text-green-800 text-xl text-center md:text-left">Diario di Bordo</h2>
+                <div id="listaDettagliata" class="space-y-8"></div>
+            </section>
+
+            <section id="adminPanelSection" class="hidden md:col-span-3 bg-red-50 p-6 rounded-lg border-2 border-red-200 mt-6">
+                <div class="mb-6 border-b border-red-200 pb-4">
+                    <h3 class="font-bold text-red-800 text-xs uppercase mb-2">Gestione Nomi Soci</h3>
+                    <div class="flex flex-wrap gap-2">
+                        <input type="email" id="adminUserEmail" placeholder="Email socio" class="text-xs p-2 border rounded w-full md:w-48">
+                        <input type="text" id="adminUserNome" placeholder="Nome e Cognome reale" class="text-xs p-2 border rounded w-full md:w-48">
+                        <button onclick="salvaNomeSocio()" class="bg-red-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-red-700 transition">Salva Nome</button>
+                    </div>
+                </div>
+                <h2 class="font-bold mb-4 text-red-800 uppercase text-sm">Pannello Amministrazione (Elimina Voci)</h2>
+                <div id="adminVoci" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-xs"></div>
+            </section>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, getDoc, getDocs, setDoc, deleteDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+          apiKey: "AIzaSyC8BXNtmAiAg39eEGXxlaHi0Lbi1yiQsZA",
+          authDomain: "apppomdatera.firebaseapp.com",
+          projectId: "apppomdatera",
+          storageBucket: "apppomdatera.firebasestorage.app",
+          messagingSenderId: "989073289331",
+          appId: "1:989073289331:web:f69b32d6f92379bcd8fa06",
+          measurementId: "G-5ZD9QNK6P0"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const provider = new GoogleAuthProvider();
+
+        let userEmail = null;
+        let userName = "";
+        let userPhoto = "";
+        let isAdminUser = false;
+        let socioSelezionato = null; 
+        const attivitaList = ["Centro del Riuso", "Frutteto", "Panieri", "Sede", "Direttivo", "Gestione Economica", "Varie"];
+
+        document.getElementById('dataAttivita').valueAsDate = new Date();
+
+        // --- AUTH ---
+        document.getElementById('btnLoginGoogle').onclick = async () => {
+            try { await signInWithPopup(auth, provider); } 
+            catch (e) { alert("Errore login: " + e.message); }
+        };
+        document.getElementById('btnLogout').onclick = () => signOut(auth);
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userEmail = user.email;
+                userName = user.displayName;
+                userPhoto = user.photoURL;
+                const userDoc = await getDoc(doc(db, "users", userEmail));
+                isAdminUser = userDoc.exists() && userDoc.data().admin === true;
+                
+                document.getElementById('authSection').classList.add('hidden');
+                document.getElementById('mainApp').classList.remove('hidden');
+                document.getElementById('btnLogout').classList.remove('hidden');
+                if(isAdminUser) document.getElementById('adminPanelSection').classList.remove('hidden');
+                caricaDati();
+            } else {
+                document.getElementById('authSection').classList.remove('hidden');
+                document.getElementById('mainApp').classList.add('hidden');
+                document.getElementById('btnLogout').classList.add('hidden');
+            }
+        });
+
+        // --- INVIO DATI ---
+        document.getElementById('oreForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const dataInput = document.getElementById('dataAttivita').value;
+            try {
+                await addDoc(collection(db, "ore_volontariato"), {
+                    attivita: document.getElementById('attivita').value,
+                    ore: parseFloat(document.getElementById('ore').value),
+                    descrizione: document.getElementById('descrizione').value,
+                    data: dataInput ? new Date(dataInput) : new Date(),
+                    socio: userEmail,
+                    socioNome: userName,
+                    socioFoto: userPhoto
+                });
+                alert("✅ Registrata!");
+                e.target.reset();
+                document.getElementById('dataAttivita').valueAsDate = new Date();
+            } catch (err) { alert("Errore!"); }
+        };
+
+        // --- GLOBAL ADMIN ACTIONS ---
+        window.eliminaRecord = async (id) => {
+            if (confirm("Vuoi eliminare definitivamente questa voce?")) {
+                await deleteDoc(doc(db, "ore_volontariato", id));
+            }
+        };
+
+        window.salvaNomeSocio = async () => {
+            const email = document.getElementById('adminUserEmail').value.trim().toLowerCase();
+            const nome = document.getElementById('adminUserNome').value.trim();
+            if (!email || !nome) return alert("Inserisci email e nome!");
+            try {
+                await setDoc(doc(db, "users", email), { nomeReale: nome }, { merge: true });
+                alert("✅ Nome salvato!");
+                caricaDati();
+            } catch (e) { alert("Errore!"); }
+        };
+
+        // --- CORE LOGIC ---
+        function caricaDati() {
+            onSnapshot(query(collection(db, "ore_volontariato"), orderBy("data", "desc")), async (snapshot) => {
+                
+                // 1. Mappa Nomi Reali
+                let mappaNomi = {};
+                const usersSnap = await getDocs(collection(db, "users"));
+                usersSnap.forEach(uDoc => { mappaNomi[uDoc.id] = uDoc.data().nomeReale; });
+
+                const datiPerSocio = {};
+                const tutteLeVoci = [];
+
+                snapshot.forEach(doc => {
+                    const d = doc.data();
+                    const id = doc.id;
+                    tutteLeVoci.push({id, ...d});
+                    const nomeVisuale = mappaNomi[d.socio] || d.socioNome || d.socio.split('@')[0];
+                    if (!datiPerSocio[d.socio]) datiPerSocio[d.socio] = { nome: nomeVisuale, ore: {} };
+                    datiPerSocio[d.socio].ore[d.attivita] = (datiPerSocio[d.socio].ore[d.attivita] || 0) + d.ore;
+                });
+
+                // 2. Render Tabella Pivot
+                const header = document.getElementById('tableHeader');
+                header.innerHTML = `<th class="p-2 border bg-stone-100">Socio (clicca)</th>` + 
+                    attivitaList.map(a => `<th class="p-2 border text-center font-normal text-[10px] italic bg-stone-50">${a}</th>`).join('') + 
+                    `<th class="p-2 border font-bold bg-stone-100 text-center">TOT</th>`;
+
+                const tbody = document.getElementById('tableBody');
+                tbody.innerHTML = "";
+                Object.keys(datiPerSocio).sort().forEach(socio => {
+                    let riga = `<td class="p-2 border font-bold text-blue-700 cursor-pointer hover:bg-blue-100 transition" onclick="window.selezionaSocio('${socio}')">👤 ${datiPerSocio[socio].nome}</td>`;
+                    let tot = 0;
+                    attivitaList.forEach(a => {
+                        const o = datiPerSocio[socio].ore[a] || 0;
+                        riga += `<td class="p-2 border text-center ${o > 0 ? 'bg-green-50/50' : 'text-stone-300'}">${o || '-'}</td>`;
+                        tot += o;
+                    });
+                    riga += `<td class="p-2 border font-bold text-green-700 text-center">${tot}</td>`;
+                    tbody.innerHTML += `<tr class="hover:bg-stone-50">${riga}</tr>`;
+                });
+
+                // 3. Funzione Selezione Socio (Aggiorna TUTTO)
+                window.selezionaSocio = (email) => {
+                    socioSelezionato = email;
+                    
+                    // Popola campi admin
+                    if (isAdminUser) {
+                        document.getElementById('adminUserEmail').value = email;
+                        document.getElementById('adminUserNome').value = mappaNomi[email] || "";
+                    }
+
+                    renderUI(tutteLeVoci, mappaNomi);
+                    document.getElementById('listaDettagliata').scrollIntoView({ behavior: 'smooth' });
+                };
+
+                // Funzione interna per ridisegnare Diario e Pannello Admin
+                const renderUI = (voci, nomi) => {
+                    const listaDiv = document.getElementById('listaDettagliata');
+                    const adminDiv = document.getElementById('adminVoci');
+                    const h2Diario = listaDiv.parentElement.querySelector('h2');
+                    const h2Admin = document.querySelector('#adminPanelSection h2');
+
+                    if (!socioSelezionato) {
+                        listaDiv.innerHTML = `<p class="text-stone-400 italic">Clicca su un nome per i dettagli.</p>`;
+                        if(isAdminUser) adminDiv.innerHTML = `<p class="text-red-400 italic">Seleziona un socio dalla tabella.</p>`;
+                        return;
+                    }
+
+                    // --- RENDER DIARIO ---
+                    const filtrate = voci.filter(v => v.socio === socioSelezionato);
+                    const primoRec = filtrate[0];
+                    const n = nomi[socioSelezionato] || primoRec?.socioNome || socioSelezionato.split('@')[0];
+                    const f = primoRec?.socioFoto || "https://ui-avatars.com/api/?name=" + n;
+
+                    h2Diario.innerHTML = `<div class="flex items-center gap-4"><img src="${f}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-sm" referrerpolicy="no-referrer"><div><p class="text-[10px] text-stone-500 uppercase leading-none">Attività di:</p><span class="text-green-800 text-2xl font-bold">${n}</span></div></div>`;
+                    
+                    listaDiv.innerHTML = "";
+                    attivitaList.forEach(att => {
+                        const perAtt = filtrate.filter(v => v.attivita === att);
+                        if (perAtt.length > 0) {
+                            let h = `<div class="bg-white p-4 rounded border-l-4 border-green-600 shadow-sm mb-4"><h3 class="font-bold text-green-800 mb-2">${att}</h3><table class="w-full text-xs">`;
+                            perAtt.forEach(v => {
+                                const dt = v.data?.seconds ? new Date(v.data.seconds*1000).toLocaleDateString('it-IT') : v.data;
+                                h += `<tr class="border-b"><td class="py-1 w-20 text-stone-500">${dt}</td><td class="w-10 font-bold">${v.ore}h</td><td class="italic">${v.descrizione}</td></tr>`;
+                            });
+                            listaDiv.innerHTML += h + `</table></div>`;
+                        }
+                    });
+
+                    // --- RENDER ADMIN PANEL ---
+                    if (isAdminUser) {
+                        h2Admin.innerHTML = `Gestione record di: <span class="underline">${n}</span>`;
+                        adminDiv.innerHTML = filtrate.map(v => {
+                            const dt = v.data?.seconds ? new Date(v.data.seconds*1000).toLocaleDateString('it-IT') : v.data;
+                            return `
+                            <div class="flex justify-between items-center p-2 bg-white border border-red-100 rounded shadow-sm">
+                                <div><p class="font-bold">${dt} - ${v.attivita}</p><p class="text-[10px] text-stone-500">${v.ore}h</p></div>
+                                <button onclick="window.eliminaRecord('${v.id}')" class="bg-red-50 text-red-600 px-2 py-1 rounded text-[10px] font-bold hover:bg-red-600 hover:text-white transition">Elimina</button>
+                            </div>`;
+                        }).join('');
+                    }
+                };
+
+                // Refresh automatico se c'è un socio già selezionato (per Snapshot Firebase)
+                renderUI(tutteLeVoci, mappaNomi);
+            });
+        }
+    </script>
+</body>
+</html>
