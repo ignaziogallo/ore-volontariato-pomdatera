@@ -162,6 +162,46 @@
             }
         };
 
+        // --- FUNZIONI EDITING ADMIN ---
+
+        // 1. Attiva la modalità modifica sulla riga
+        window.abilitaModifica = (id) => {
+            document.getElementById(`view-${id}`).classList.add('hidden');
+            document.getElementById(`edit-${id}`).classList.remove('hidden');
+        };
+
+        // 2. Annulla la modifica
+        window.annullaModifica = (id) => {
+            document.getElementById(`view-${id}`).classList.remove('hidden');
+            document.getElementById(`edit-${id}`).classList.add('hidden');
+        };
+
+        // 3. Salva le modifiche su Firebase
+        window.salvaModifica = async (id) => {
+            const nuovaData = document.getElementById(`input-data-${id}`).value;
+            const nuovaAttivita = document.getElementById(`input-att-${id}`).value;
+            const nuoveOre = parseFloat(document.getElementById(`input-ore-${id}`).value);
+
+            if (!nuovaData || !nuovaAttivita || isNaN(nuoveOre)) {
+                alert("⚠️ Tutti i campi devono essere compilati correttamente!");
+                return;
+            }
+
+            try {
+                await setDoc(doc(db, "ore_volontariato", id), {
+                    data: new Date(nuovaData),
+                    attivita: nuovaAttivita,
+                    ore: nuoveOre
+                }, { merge: true });
+                
+                alert("✅ Record aggiornato con successo!");
+                // Non serve fare nulla, onSnapshot aggiornerà la UI automaticamente
+            } catch (e) {
+                console.error("Errore update:", e);
+                alert("❌ Errore durante il salvataggio.");
+            }
+        };
+
         window.salvaNomeSocio = async () => {
             const email = document.getElementById('adminUserEmail').value.trim().toLowerCase();
             const nome = document.getElementById('adminUserNome').value.trim();
@@ -262,15 +302,42 @@
                         }
                     });
 
-                    // --- RENDER ADMIN PANEL ---
+                    // --- RENDER ADMIN PANEL (CON EDITING) ---
                     if (isAdminUser) {
                         h2Admin.innerHTML = `Gestione record di: <span class="underline">${n}</span>`;
                         adminDiv.innerHTML = filtrate.map(v => {
-                            const dt = v.data?.seconds ? new Date(v.data.seconds*1000).toLocaleDateString('it-IT') : v.data;
+                            const dtISO = v.data?.seconds ? new Date(v.data.seconds * 1000).toISOString().split('T')[0] : v.data;
+                            const dtDisplay = v.data?.seconds ? new Date(v.data.seconds * 1000).toLocaleDateString('it-IT') : v.data;
+                            
                             return `
-                            <div class="flex justify-between items-center p-2 bg-white border border-red-100 rounded shadow-sm">
-                                <div><p class="font-bold">${dt} - ${v.attivita}</p><p class="text-[10px] text-stone-500">${v.ore}h</p></div>
-                                <button onclick="window.eliminaRecord('${v.id}')" class="bg-red-50 text-red-600 px-2 py-1 rounded text-[10px] font-bold hover:bg-red-600 hover:text-white transition">Elimina</button>
+                            <div class="bg-white border border-red-100 rounded shadow-sm mb-2 overflow-hidden">
+                                <div id="view-${v.id}" class="flex justify-between items-center p-3">
+                                    <div class="flex-1">
+                                        <p class="font-bold text-stone-700">${dtDisplay} — ${v.attivita}</p>
+                                        <p class="text-[10px] text-stone-500 italic">${v.ore}h: ${v.descrizione.substring(0, 30)}...</p>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button onclick="window.abilitaModifica('${v.id}')" class="text-blue-600 font-bold hover:underline">Modifica</button>
+                                        <button onclick="window.eliminaRecord('${v.id}')" class="text-red-600 font-bold hover:underline">Elimina</button>
+                                    </div>
+                                </div>
+
+                                <div id="edit-${v.id}" class="hidden p-3 bg-red-50 space-y-2">
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <input type="date" id="input-data-${v.id}" value="${dtISO}" class="p-1 border rounded text-[10px]">
+                                        <select id="input-att-${v.id}" class="p-1 border rounded text-[10px]">
+                                            ${attivitaList.map(a => `<option ${a === v.attivita ? 'selected' : ''}>${a}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div class="flex gap-2 items-center">
+                                        <input type="number" step="0.5" id="input-ore-${v.id}" value="${v.ore}" class="w-20 p-1 border rounded text-[10px]">
+                                        <span class="text-[10px]">ore</span>
+                                        <div class="flex-1 flex justify-end gap-2">
+                                            <button onclick="window.salvaModifica('${v.id}')" class="bg-green-600 text-white px-2 py-1 rounded text-[10px] font-bold">Salva</button>
+                                            <button onclick="window.annullaModifica('${v.id}')" class="bg-stone-400 text-white px-2 py-1 rounded text-[10px] font-bold">Annulla</button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>`;
                         }).join('');
                     }
