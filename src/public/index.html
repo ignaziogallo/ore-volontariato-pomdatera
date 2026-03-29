@@ -65,15 +65,16 @@
             </section>
 
             <section id="adminPanelSection" class="hidden md:col-span-3 bg-red-50 p-6 rounded-lg border-2 border-red-200 mt-6">
-                <div class="mb-6 border-b border-red-200 pb-4">
-                    <h3 class="font-bold text-red-800 text-xs uppercase mb-2">Gestione Nomi Soci</h3>
+                <div id="gestioneNomiContainer" class="hidden mb-6 border-b border-red-200 pb-4">
+                    <h3 class="font-bold text-red-800 text-xs uppercase mb-2">Gestione Nomi Soci (Admin)</h3>
                     <div class="flex flex-wrap gap-2">
-                        <input type="email" id="adminUserEmail" placeholder="Email socio" class="text-xs p-2 border rounded w-full md:w-48">
-                        <input type="text" id="adminUserNome" placeholder="Nome e Cognome reale" class="text-xs p-2 border rounded w-full md:w-48">
-                        <button onclick="salvaNomeSocio()" class="bg-red-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-red-700 transition">Salva Nome</button>
+                        <input type="email" id="adminUserEmail" placeholder="Email socio" class="text-xs p-2 border rounded w-full md:w-48 bg-white">
+                        <input type="text" id="adminUserNome" placeholder="Nome reale" class="text-xs p-2 border rounded w-full md:w-48 bg-white">
+                        <button onclick="salvaNomeSocio()" class="bg-red-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-red-700">Salva Nome</button>
                     </div>
                 </div>
-                <h2 class="font-bold mb-4 text-red-800 uppercase text-sm">Pannello Amministrazione (Elimina Voci)</h2>
+                
+                <h2 id="titoloGestioneRecord" class="font-bold mb-4 text-red-800 uppercase text-sm">Caricamento...</h2>
                 <div id="adminVoci" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-xs"></div>
             </section>
         </div>
@@ -99,254 +100,142 @@
         const db = getFirestore(app);
         const provider = new GoogleAuthProvider();
 
-        let userEmail = null;
-        let userName = "";
-        let userPhoto = "";
-        let isAdminUser = false;
-        let socioSelezionato = null; 
+        let userEmail = null, userName = "", userPhoto = "", isAdminUser = false, socioSelezionato = null;
         const attivitaList = ["Centro del Riuso", "Frutteto", "Panieri", "Sede", "Direttivo", "Gestione Economica", "Varie"];
 
         document.getElementById('dataAttivita').valueAsDate = new Date();
 
-        // --- AUTH ---
-        document.getElementById('btnLoginGoogle').onclick = async () => {
-            try { await signInWithPopup(auth, provider); } 
-            catch (e) { alert("Errore login: " + e.message); }
-        };
+        document.getElementById('btnLoginGoogle').onclick = async () => { try { await signInWithPopup(auth, provider); } catch (e) { alert(e.message); } };
         document.getElementById('btnLogout').onclick = () => signOut(auth);
 
         onAuthStateChanged(auth, async (user) => {
             if (user) {
-                userEmail = user.email;
-                userName = user.displayName;
-                userPhoto = user.photoURL;
+                userEmail = user.email; userName = user.displayName; userPhoto = user.photoURL;
                 const userDoc = await getDoc(doc(db, "users", userEmail));
                 isAdminUser = userDoc.exists() && userDoc.data().admin === true;
-                
                 document.getElementById('authSection').classList.add('hidden');
                 document.getElementById('mainApp').classList.remove('hidden');
                 document.getElementById('btnLogout').classList.remove('hidden');
-                if(isAdminUser) document.getElementById('adminPanelSection').classList.remove('hidden');
+                document.getElementById('adminPanelSection').classList.remove('hidden');
+                if(isAdminUser) document.getElementById('gestioneNomiContainer').classList.remove('hidden');
                 caricaDati();
-            } else {
-                document.getElementById('authSection').classList.remove('hidden');
-                document.getElementById('mainApp').classList.add('hidden');
-                document.getElementById('btnLogout').classList.add('hidden');
-            }
+            } else { document.getElementById('authSection').classList.remove('hidden'); document.getElementById('mainApp').classList.add('hidden'); }
         });
 
-        // --- INVIO DATI ---
-        document.getElementById('oreForm').onsubmit = async (e) => {
-            e.preventDefault();
-            const dataInput = document.getElementById('dataAttivita').value;
-            try {
-                await addDoc(collection(db, "ore_volontariato"), {
-                    attivita: document.getElementById('attivita').value,
-                    ore: parseFloat(document.getElementById('ore').value),
-                    descrizione: document.getElementById('descrizione').value,
-                    data: dataInput ? new Date(dataInput) : new Date(),
-                    socio: userEmail,
-                    socioNome: userName,
-                    socioFoto: userPhoto
-                });
-                alert("✅ Registrata!");
-                e.target.reset();
-                document.getElementById('dataAttivita').valueAsDate = new Date();
-            } catch (err) { alert("Errore!"); }
-        };
+        window.abilitaModifica = (id) => { document.getElementById(`view-${id}`).classList.add('hidden'); document.getElementById(`edit-${id}`).classList.remove('hidden'); };
+        window.annullaModifica = (id) => { document.getElementById(`view-${id}`).classList.remove('hidden'); document.getElementById(`edit-${id}`).classList.add('hidden'); };
 
-        // --- GLOBAL ADMIN ACTIONS ---
-        window.eliminaRecord = async (id) => {
-            if (confirm("Vuoi eliminare definitivamente questa voce?")) {
-                await deleteDoc(doc(db, "ore_volontariato", id));
-            }
-        };
-
-        // --- FUNZIONI EDITING ADMIN ---
-
-        // 1. Attiva la modalità modifica sulla riga
-        window.abilitaModifica = (id) => {
-            document.getElementById(`view-${id}`).classList.add('hidden');
-            document.getElementById(`edit-${id}`).classList.remove('hidden');
-        };
-
-        // 2. Annulla la modifica
-        window.annullaModifica = (id) => {
-            document.getElementById(`view-${id}`).classList.remove('hidden');
-            document.getElementById(`edit-${id}`).classList.add('hidden');
-        };
-
-        // 3. Salva le modifiche su Firebase
         window.salvaModifica = async (id) => {
-            const nuovaData = document.getElementById(`input-data-${id}`).value;
-            const nuovaAttivita = document.getElementById(`input-att-${id}`).value;
-            const nuoveOre = parseFloat(document.getElementById(`input-ore-${id}`).value);
-
-            if (!nuovaData || !nuovaAttivita || isNaN(nuoveOre)) {
-                alert("⚠️ Tutti i campi devono essere compilati correttamente!");
-                return;
-            }
-
-            try {
-                await setDoc(doc(db, "ore_volontariato", id), {
-                    data: new Date(nuovaData),
-                    attivita: nuovaAttivita,
-                    ore: nuoveOre
-                }, { merge: true });
-                
-                alert("✅ Record aggiornato con successo!");
-                // Non serve fare nulla, onSnapshot aggiornerà la UI automaticamente
-            } catch (e) {
-                console.error("Errore update:", e);
-                alert("❌ Errore durante il salvataggio.");
-            }
+            const d = document.getElementById(`input-data-${id}`).value;
+            const a = document.getElementById(`input-att-${id}`).value;
+            const o = parseFloat(document.getElementById(`input-ore-${id}`).value);
+            try { await setDoc(doc(db, "ore_volontariato", id), { data: new Date(d), attivita: a, ore: o }, { merge: true }); alert("✅ Salvato!"); } catch(e) { alert("Errore!"); }
         };
+
+        window.eliminaRecord = async (id) => { if (confirm("Eliminare?")) await deleteDoc(doc(db, "ore_volontariato", id)); };
 
         window.salvaNomeSocio = async () => {
-            const email = document.getElementById('adminUserEmail').value.trim().toLowerCase();
-            const nome = document.getElementById('adminUserNome').value.trim();
-            if (!email || !nome) return alert("Inserisci email e nome!");
-            try {
-                await setDoc(doc(db, "users", email), { nomeReale: nome }, { merge: true });
-                alert("✅ Nome salvato!");
-                caricaDati();
-            } catch (e) { alert("Errore!"); }
+            const e = document.getElementById('adminUserEmail').value.trim().toLowerCase();
+            const n = document.getElementById('adminUserNome').value.trim();
+            if(isAdminUser && e && n) await setDoc(doc(db, "users", e), { nomeReale: n }, { merge: true });
         };
 
-        // --- CORE LOGIC ---
         function caricaDati() {
             onSnapshot(query(collection(db, "ore_volontariato"), orderBy("data", "desc")), async (snapshot) => {
-                
-                // 1. Mappa Nomi Reali
                 let mappaNomi = {};
                 const usersSnap = await getDocs(collection(db, "users"));
-                usersSnap.forEach(uDoc => { mappaNomi[uDoc.id] = uDoc.data().nomeReale; });
+                usersSnap.forEach(u => mappaNomi[u.id] = u.data().nomeReale);
 
-                const datiPerSocio = {};
-                const tutteLeVoci = [];
-
+                const datiPerSocio = {}, tutteLeVoci = [];
                 snapshot.forEach(doc => {
-                    const d = doc.data();
-                    const id = doc.id;
-                    tutteLeVoci.push({id, ...d});
-                    const nomeVisuale = mappaNomi[d.socio] || d.socioNome || d.socio.split('@')[0];
-                    if (!datiPerSocio[d.socio]) datiPerSocio[d.socio] = { nome: nomeVisuale, ore: {} };
+                    const d = doc.data(); tutteLeVoci.push({id: doc.id, ...d});
+                    const nv = mappaNomi[d.socio] || d.socioNome || d.socio.split('@')[0];
+                    if (!datiPerSocio[d.socio]) datiPerSocio[d.socio] = { nome: nv, ore: {} };
                     datiPerSocio[d.socio].ore[d.attivita] = (datiPerSocio[d.socio].ore[d.attivita] || 0) + d.ore;
                 });
 
-                // 2. Render Tabella Pivot
+                // Tabella Pivot
                 const header = document.getElementById('tableHeader');
-                header.innerHTML = `<th class="p-2 border bg-stone-100">Socio (clicca)</th>` + 
-                    attivitaList.map(a => `<th class="p-2 border text-center font-normal text-[10px] italic bg-stone-50">${a}</th>`).join('') + 
-                    `<th class="p-2 border font-bold bg-stone-100 text-center">TOT</th>`;
-
-                const tbody = document.getElementById('tableBody');
-                tbody.innerHTML = "";
-                Object.keys(datiPerSocio).sort().forEach(socio => {
-                    let riga = `<td class="p-2 border font-bold text-blue-700 cursor-pointer hover:bg-blue-100 transition" onclick="window.selezionaSocio('${socio}')">👤 ${datiPerSocio[socio].nome}</td>`;
-                    let tot = 0;
-                    attivitaList.forEach(a => {
-                        const o = datiPerSocio[socio].ore[a] || 0;
-                        riga += `<td class="p-2 border text-center ${o > 0 ? 'bg-green-50/50' : 'text-stone-300'}">${o || '-'}</td>`;
-                        tot += o;
-                    });
-                    riga += `<td class="p-2 border font-bold text-green-700 text-center">${tot}</td>`;
-                    tbody.innerHTML += `<tr class="hover:bg-stone-50">${riga}</tr>`;
+                header.innerHTML = `<th class="p-2 border bg-stone-100">Socio</th>` + attivitaList.map(a => `<th class="p-2 border text-center text-[10px]">${a}</th>`).join('') + `<th class="p-2 border font-bold text-center">TOT</th>`;
+                const tbody = document.getElementById('tableBody'); tbody.innerHTML = "";
+                Object.keys(datiPerSocio).sort().forEach(s => {
+                    let r = `<td class="p-2 border font-bold text-blue-700 cursor-pointer hover:bg-blue-50" onclick="window.selezionaSocio('${s}')">👤 ${datiPerSocio[s].nome}</td>`;
+                    let t = 0; attivitaList.forEach(a => { const o = datiPerSocio[s].ore[a] || 0; r += `<td class="p-2 border text-center ${o>0?'bg-green-50':''}">${o||'-'}</td>`; t += o; });
+                    r += `<td class="p-2 border font-bold text-center">${t}</td>`;
+                    tbody.innerHTML += `<tr>${r}</tr>`;
                 });
 
-                // 3. Funzione Selezione Socio (Aggiorna TUTTO)
-                window.selezionaSocio = (email) => {
-                    socioSelezionato = email;
-                    
-                    // Popola campi admin
-                    if (isAdminUser) {
-                        document.getElementById('adminUserEmail').value = email;
-                        document.getElementById('adminUserNome').value = mappaNomi[email] || "";
-                    }
-
-                    renderUI(tutteLeVoci, mappaNomi);
-                    document.getElementById('listaDettagliata').scrollIntoView({ behavior: 'smooth' });
+                window.selezionaSocio = (email) => { 
+                    socioSelezionato = email; 
+                    if(isAdminUser) { document.getElementById('adminUserEmail').value = email; document.getElementById('adminUserNome').value = mappaNomi[email] || ""; }
+                    renderUI(); 
                 };
 
-                // Funzione interna per ridisegnare Diario e Pannello Admin
-                const renderUI = (voci, nomi) => {
+                const renderUI = () => {
+                    // 1. RENDERING DIARIO DI BORDO (Dettagli socio cliccato)
                     const listaDiv = document.getElementById('listaDettagliata');
-                    const adminDiv = document.getElementById('adminVoci');
-                    const h2Diario = listaDiv.parentElement.querySelector('h2');
-                    const h2Admin = document.querySelector('#adminPanelSection h2');
-
                     if (!socioSelezionato) {
-                        listaDiv.innerHTML = `<p class="text-stone-400 italic">Clicca su un nome per i dettagli.</p>`;
-                        if(isAdminUser) adminDiv.innerHTML = `<p class="text-red-400 italic">Seleziona un socio dalla tabella.</p>`;
-                        return;
+                        listaDiv.innerHTML = `<p class="italic text-stone-400">Seleziona un socio dalla tabella.</p>`;
+                    } else {
+                        const filtrate = tutteLeVoci.filter(v => v.socio === socioSelezionato);
+                        const n = mappaNomi[socioSelezionato] || filtrate[0]?.socioNome || socioSelezionato.split('@')[0];
+                        listaDiv.innerHTML = `<h3 class="text-xl font-bold text-green-800 mb-4">Dettagli: ${n}</h3>`;
+                        attivitaList.forEach(at => {
+                            const perAt = filtrate.filter(v => v.attivita === at);
+                            if (perAt.length > 0) {
+                                let h = `<div class="bg-white p-3 rounded border-l-4 border-green-600 mb-2 shadow-sm"><h4 class="font-bold text-green-700 text-sm">${at}</h4><table class="w-full text-xs mt-1">`;
+                                perAt.forEach(v => {
+                                    const d = v.data?.seconds ? new Date(v.data.seconds*1000).toLocaleDateString('it-IT') : v.data;
+                                    h += `<tr class="border-t"><td class="py-1 w-20 text-stone-500">${d}</td><td class="w-10 font-bold">${v.ore}h</td><td class="italic text-stone-600">${v.descrizione}</td></tr>`;
+                                });
+                                listaDiv.innerHTML += h + `</table></div>`;
+                            }
+                        });
                     }
 
-                    // --- RENDER DIARIO ---
-                    const filtrate = voci.filter(v => v.socio === socioSelezionato);
-                    const primoRec = filtrate[0];
-                    const n = nomi[socioSelezionato] || primoRec?.socioNome || socioSelezionato.split('@')[0];
-                    const f = primoRec?.socioFoto || "https://ui-avatars.com/api/?name=" + n;
+                    // 2. RENDERING GESTIONE RECORD (Rossa)
+                    const adminDiv = document.getElementById('adminVoci');
+                    const tGest = document.getElementById('titoloGestioneRecord');
+                    let target = isAdminUser ? socioSelezionato : userEmail;
 
-                    h2Diario.innerHTML = `<div class="flex items-center gap-4"><img src="${f}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-sm" referrerpolicy="no-referrer"><div><p class="text-[10px] text-stone-500 uppercase leading-none">Attività di:</p><span class="text-green-800 text-2xl font-bold">${n}</span></div></div>`;
-                    
-                    listaDiv.innerHTML = "";
-                    attivitaList.forEach(att => {
-                        const perAtt = filtrate.filter(v => v.attivita === att);
-                        if (perAtt.length > 0) {
-                            let h = `<div class="bg-white p-4 rounded border-l-4 border-green-600 shadow-sm mb-4"><h3 class="font-bold text-green-800 mb-2">${att}</h3><table class="w-full text-xs">`;
-                            perAtt.forEach(v => {
-                                const dt = v.data?.seconds ? new Date(v.data.seconds*1000).toLocaleDateString('it-IT') : v.data;
-                                h += `<tr class="border-b"><td class="py-1 w-20 text-stone-500">${dt}</td><td class="w-10 font-bold">${v.ore}h</td><td class="italic">${v.descrizione}</td></tr>`;
-                            });
-                            listaDiv.innerHTML += h + `</table></div>`;
-                        }
-                    });
-
-                    // --- RENDER ADMIN PANEL (CON EDITING) ---
-                    if (isAdminUser) {
-                        h2Admin.innerHTML = `Gestione record di: <span class="underline">${n}</span>`;
-                        adminDiv.innerHTML = filtrate.map(v => {
-                            const dtISO = v.data?.seconds ? new Date(v.data.seconds * 1000).toISOString().split('T')[0] : v.data;
-                            const dtDisplay = v.data?.seconds ? new Date(v.data.seconds * 1000).toLocaleDateString('it-IT') : v.data;
-                            
+                    if (!target) {
+                        adminDiv.innerHTML = `<p class="italic text-red-400">Seleziona un socio per modificare i record.</p>`;
+                        tGest.innerText = "Gestione Record";
+                    } else {
+                        const recs = tutteLeVoci.filter(v => v.socio === target);
+                        tGest.innerText = isAdminUser ? `Gestione record di: ${mappaNomi[target] || target}` : "I tuoi record";
+                        adminDiv.innerHTML = recs.map(v => {
+                            const iso = v.data?.seconds ? new Date(v.data.seconds*1000).toISOString().split('T')[0] : v.data;
+                            const dsp = v.data?.seconds ? new Date(v.data.seconds*1000).toLocaleDateString('it-IT') : v.data;
                             return `
-                            <div class="bg-white border border-red-100 rounded shadow-sm mb-2 overflow-hidden">
-                                <div id="view-${v.id}" class="flex justify-between items-center p-3">
-                                    <div class="flex-1">
-                                        <p class="font-bold text-stone-700">${dtDisplay} — ${v.attivita}</p>
-                                        <p class="text-[10px] text-stone-500 italic">${v.ore}h: ${v.descrizione.substring(0, 30)}...</p>
-                                    </div>
-                                    <div class="flex gap-2">
-                                        <button onclick="window.abilitaModifica('${v.id}')" class="text-blue-600 font-bold hover:underline">Modifica</button>
-                                        <button onclick="window.eliminaRecord('${v.id}')" class="text-red-600 font-bold hover:underline">Elimina</button>
-                                    </div>
+                            <div class="bg-white border rounded mb-2 overflow-hidden shadow-sm">
+                                <div id="view-${v.id}" class="p-2 flex justify-between items-center">
+                                    <div><b>${dsp}</b> - ${v.attivita} (${v.ore}h)</div>
+                                    <div class="flex gap-2 text-blue-600 font-bold"><button onclick="window.abilitaModifica('${v.id}')">Edit</button><button onclick="window.eliminaRecord('${v.id}')" class="text-red-600">X</button></div>
                                 </div>
-
-                                <div id="edit-${v.id}" class="hidden p-3 bg-red-50 space-y-2">
-                                    <div class="grid grid-cols-2 gap-2">
-                                        <input type="date" id="input-data-${v.id}" value="${dtISO}" class="p-1 border rounded text-[10px]">
-                                        <select id="input-att-${v.id}" class="p-1 border rounded text-[10px]">
-                                            ${attivitaList.map(a => `<option ${a === v.attivita ? 'selected' : ''}>${a}</option>`).join('')}
-                                        </select>
-                                    </div>
-                                    <div class="flex gap-2 items-center">
-                                        <input type="number" step="0.5" id="input-ore-${v.id}" value="${v.ore}" class="w-20 p-1 border rounded text-[10px]">
-                                        <span class="text-[10px]">ore</span>
-                                        <div class="flex-1 flex justify-end gap-2">
-                                            <button onclick="window.salvaModifica('${v.id}')" class="bg-green-600 text-white px-2 py-1 rounded text-[10px] font-bold">Salva</button>
-                                            <button onclick="window.annullaModifica('${v.id}')" class="bg-stone-400 text-white px-2 py-1 rounded text-[10px] font-bold">Annulla</button>
-                                        </div>
-                                    </div>
+                                <div id="edit-${v.id}" class="hidden p-2 bg-blue-50 space-y-1">
+                                    <input type="date" id="input-data-${v.id}" value="${iso}" class="w-full p-1 border rounded">
+                                    <select id="input-att-${v.id}" class="w-full p-1 border rounded">${attivitaList.map(a=>`<option ${a===v.attivita?'selected':''}>${a}</option>`).join('')}</select>
+                                    <input type="number" step="0.5" id="input-ore-${v.id}" value="${v.ore}" class="w-full p-1 border rounded">
+                                    <div class="flex gap-1"><button onclick="window.salvaModifica('${v.id}')" class="flex-1 bg-green-600 text-white rounded p-1 font-bold">Salva</button><button onclick="window.annullaModifica('${v.id}')" class="flex-1 bg-stone-400 text-white rounded p-1 font-bold">Annulla</button></div>
                                 </div>
                             </div>`;
                         }).join('');
                     }
                 };
-
-                // Refresh automatico se c'è un socio già selezionato (per Snapshot Firebase)
-                renderUI(tutteLeVoci, mappaNomi);
+                renderUI();
             });
         }
+
+        document.getElementById('oreForm').onsubmit = async (e) => {
+            e.preventDefault();
+            await addDoc(collection(db, "ore_volontariato"), {
+                attivita: document.getElementById('attivita').value, ore: parseFloat(document.getElementById('ore').value),
+                descrizione: document.getElementById('descrizione').value, data: new Date(document.getElementById('dataAttivita').value),
+                socio: userEmail, socioNome: userName, socioFoto: userPhoto
+            });
+            e.target.reset(); document.getElementById('dataAttivita').valueAsDate = new Date(); alert("✅ OK!");
+        };
     </script>
 </body>
 </html>
