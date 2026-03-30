@@ -132,7 +132,17 @@
             try { await setDoc(doc(db, "ore_volontariato", id), { data: new Date(d), attivita: a, ore: o }, { merge: true }); alert("✅ Salvato!"); } catch(e) { alert("Errore!"); }
         };
 
-        window.eliminaRecord = async (id) => { if (confirm("Eliminare?")) await deleteDoc(doc(db, "ore_volontariato", id)); };
+        window.eliminaRecord = async (id) => {
+            if (confirm("Vuoi davvero eliminare questa attività?")) {
+                try {
+                    await deleteDoc(doc(db, "ore_volontariato", id));
+                    // Non serve alert, onSnapshot aggiorna la UI da solo
+                } catch (e) {
+                    console.error("Errore eliminazione:", e);
+                    alert("❌ Errore: Non hai i permessi per eliminare questo record o sessione scaduta.");
+                }
+            }
+        };
 
         window.salvaNomeSocio = async () => {
             const e = document.getElementById('adminUserEmail').value.trim().toLowerCase();
